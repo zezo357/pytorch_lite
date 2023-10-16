@@ -22,6 +22,7 @@ import org.pytorch.torchvision.TensorImageUtils;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.DoubleBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -135,7 +136,7 @@ result.error(e);
     }
 
     @Override
-    public void getRawImagePredictionList(Long index, byte[] imageData, Pigeon.Result<List<Double>> result) {
+    public void getRawImagePredictionList(Long index, double[] imageData, Boolean isTupleOutput, Long tupleIndex, Pigeon.Result<List<Double>> result) {
 
         PrePostProcessor prePostProcessor = null;
         Module imageModule = null;
@@ -149,18 +150,19 @@ result.error(e);
     }
         try {
 
-            final FloatBuffer floatBuffer = Tensor.allocateFloatBuffer(3 * prePostProcessor.mImageWidth * prePostProcessor.mImageHeight);
-            ByteBuffer byteBuffer = ByteBuffer.wrap(imageData);
-            byteBuffer.order(ByteOrder.nativeOrder());
-            FloatBuffer tempFloatBuffer = byteBuffer.asFloatBuffer();
+            final DoubleBuffer doubleBuffer = Tensor.allocateDoubleBuffer(3 * prePostProcessor.mImageWidth * prePostProcessor.mImageHeight);
+            doubleBuffer.put(DoubleBuffer.wrap(imageData));
+            doubleBuffer.flip();
 
-            floatBuffer.put(tempFloatBuffer);
-            floatBuffer.flip();  // Reset the buffer's position to 0
-
-            final Tensor imageInputTensor =   Tensor.fromBlob(floatBuffer, new long[] {1, 3, prePostProcessor.mImageHeight, prePostProcessor.mImageWidth}, MemoryFormat.CONTIGUOUS);
+            final Tensor imageInputTensor =   Tensor.fromBlob(doubleBuffer, new long[] {1, 3, prePostProcessor.mImageHeight, prePostProcessor.mImageWidth}, MemoryFormat.CONTIGUOUS);
 
 
-            final Tensor imageOutputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTensor();
+            Tensor imageOutputTensor = null;
+            if (isTupleOutput) {
+                imageOutputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTuple()[tupleIndex.intValue()].toTensor();
+            } else {
+                imageOutputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTensor();
+            }
 
             // getting tensor content as java array of doubles
             float[] scores = imageOutputTensor.getDataAsFloatArray();
@@ -179,7 +181,7 @@ result.error(e);
     }
 
     @Override
-    public void getRawImagePredictionListObjectDetection(Long index, byte[] imageData, Double minimumScore, Double IOUThreshold, Long boxesLimit, Pigeon.Result<List<Pigeon.ResultObjectDetection>> result) {
+    public void getRawImagePredictionListObjectDetection(Long index, byte[] imageData, Double minimumScore, Double IOUThreshold, Long boxesLimit, Boolean isTupleOutput, Long tupleIndex, Pigeon.Result<List<Pigeon.ResultObjectDetection>> result) {
         Module imageModule = null;
         PrePostProcessor prePostProcessor = null;
         try {
@@ -206,14 +208,18 @@ result.error(e);
             floatBuffer.put(tempFloatBuffer);
             floatBuffer.flip();  // Reset the buffer's position to 0
 
-            final Tensor imageInputTensor =   Tensor.fromBlob(floatBuffer, new long[] {1, 3, prePostProcessor.mImageHeight, prePostProcessor.mImageWidth}, MemoryFormat.CONTIGUOUS);
+            final Tensor imageInputTensor = Tensor.fromBlob(floatBuffer, new long[] {1, 3, prePostProcessor.mImageHeight, prePostProcessor.mImageWidth}, MemoryFormat.CONTIGUOUS);
 
             Tensor outputTensor = null;
             if (prePostProcessor.mObjectDetectionModelType == 0) {
                 IValue[] outputTuple = imageModule.forward(IValue.from(imageInputTensor)).toTuple();
                 outputTensor = outputTuple[0].toTensor();
             } else {
-                outputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTensor();
+                if (isTupleOutput) {
+                    outputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTuple()[tupleIndex.intValue()].toTensor();
+                } else {
+                    outputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTensor();
+                }
             }
 
             final float[] outputs = outputTensor.getDataAsFloatArray();
@@ -230,7 +236,7 @@ result.error(e);
 
     @Override
     public void getImagePredictionList(Long index, byte[] imageData, List<byte[]> imageBytesList,
-            Long imageWidthForBytesList, Long imageHeightForBytesList, List<Double> mean, List<Double> std,
+            Long imageWidthForBytesList, Long imageHeightForBytesList, List<Double> mean, List<Double> std, Boolean isTupleOutput, Long tupleIndex,
             Pigeon.Result<List<Double>> result) {
         Module imageModule = null;
         Bitmap bitmap = null;
@@ -271,7 +277,12 @@ result.error(e);
         try {
             final Tensor imageInputTensor = TensorImageUtils.bitmapToFloat32Tensor(bitmap, meanFormatted, stdFormatted);
 
-            final Tensor imageOutputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTensor();
+            Tensor imageOutputTensor = null;
+            if (isTupleOutput) {
+                imageOutputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTuple()[tupleIndex.intValue()].toTensor();
+            } else {
+                imageOutputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTensor();
+            }
 
             // getting tensor content as java array of doubles
             float[] scores = imageOutputTensor.getDataAsFloatArray();
@@ -292,7 +303,7 @@ result.error(e);
     @Override
     public void getImagePredictionListObjectDetection(Long index, byte[] imageData, List<byte[]> imageBytesList,
             Long imageWidthForBytesList, Long imageHeightForBytesList, Double minimumScore, Double IOUThreshold,
-            Long boxesLimit, Pigeon.Result<List<Pigeon.ResultObjectDetection>> result) {
+            Long boxesLimit, Boolean isTupleOutput, Long tupleIndex, Pigeon.Result<List<Pigeon.ResultObjectDetection>> result) {
         Module imageModule = null;
         PrePostProcessor prePostProcessor = null;
         Bitmap bitmap = null;
@@ -333,7 +344,11 @@ result.error(e);
                 IValue[] outputTuple = imageModule.forward(IValue.from(imageInputTensor)).toTuple();
                 outputTensor = outputTuple[0].toTensor();
             } else {
-                outputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTensor();
+                if (isTupleOutput) {
+                    outputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTuple()[tupleIndex.intValue()].toTensor();
+                } else {
+                    outputTensor = imageModule.forward(IValue.from(imageInputTensor)).toTensor();
+                }
             }
 
             final float[] outputs = outputTensor.getDataAsFloatArray();
